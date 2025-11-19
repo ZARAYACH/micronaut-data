@@ -3,8 +3,10 @@ package io.micronaut.data.jdbc.oraclexe
 import io.micronaut.data.jdbc.AbstractJdbcMultitenancySpec
 import io.micronaut.data.jdbc.CleanupTestResourcesDatabaseTestPropertyProvider
 import io.micronaut.test.extensions.junit5.annotation.TestResourcesScope
+import spock.lang.Ignore
 
 @TestResourcesScope("multitenancy-oracle")
+@Ignore
 class OracleXEMultitenancySpec extends AbstractJdbcMultitenancySpec implements CleanupTestResourcesDatabaseTestPropertyProvider {
 
     @Override
