@@ -16,13 +16,11 @@
 package io.micronaut.data.processor.jpa.metamodel.visitor;
 
 
-import io.micronaut.core.annotation.Internal;
 import io.micronaut.core.annotation.NonNull;
 import io.micronaut.data.processor.jpa.metamodel.JpaMetamodelProcessor;
 import io.micronaut.inject.ast.ClassElement;
 import io.micronaut.inject.ast.PropertyElement;
 import io.micronaut.inject.processing.ProcessingException;
-import io.micronaut.inject.visitor.TypeElementQuery;
 import io.micronaut.inject.visitor.TypeElementVisitor;
 import io.micronaut.inject.visitor.VisitorContext;
 import io.micronaut.sourcegen.generator.SourceGenerator;
@@ -30,8 +28,6 @@ import io.micronaut.sourcegen.generator.SourceGenerators;
 import io.micronaut.sourcegen.model.ClassDef;
 import io.micronaut.sourcegen.model.ClassTypeDef;
 
-import javax.persistence.metamodel.StaticMetamodel;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -39,41 +35,33 @@ import java.util.Set;
 /**
  *
  */
-@Internal
 public final class JpaMetamodelProcessorVisitor implements TypeElementVisitor<Object, Object> {
 
-    private Set<String> processed = new HashSet<>();
-
-    public JpaMetamodelProcessorVisitor() {
-    }
+    private final Set<String> processed = new HashSet<>();
 
     /**
-     * @return
+     *
+     * @return Set of string of supported annotation names
      */
     @Override
     public Set<String> getSupportedAnnotationNames() {
-        return new HashSet<>(Arrays.asList("jakarta.persistence.Entity",
-            "jakarta.persistence.MappedSuperClass",
-            "jakarta.persistence.Embeddable"));
+        return JpaMetamodelProcessor.SUPPORTED_JAKARTA_ANNOTATIONS;
     }
 
     /**
-     * @param element
-     * @param context
+     * @param element class element
+     * @param context visitor context
      */
     @Override
     public void visitClass(ClassElement element, VisitorContext context) {
-        if (processed.contains(element.getName())) {
+        if (!JpaMetamodelProcessor.supportedClass(element) ||
+            processed.contains(element.getName())) {
             return;
         }
         try {
             List<PropertyElement> properties = element.getBeanProperties();
             ClassTypeDef elementType = ClassTypeDef.of(element);
-
-            ClassDef.ClassDefBuilder builder = JpaMetamodelProcessor.createJpaMetaModelClassDefBuilder(
-                element.getPackageName(),
-                elementType,
-                properties);
+            ClassDef.ClassDefBuilder builder = JpaMetamodelProcessor.createJpaMetaModelClassDefBuilder(element.getPackageName(), elementType, element.getSuperType(), properties);
             ClassDef builderDef = builder.build();
             SourceGenerator sourceGenerator = SourceGenerators.findByLanguage(context.getLanguage()).orElse(null);
             if (sourceGenerator == null) {
@@ -84,47 +72,25 @@ public final class JpaMetamodelProcessorVisitor implements TypeElementVisitor<Ob
         } catch (ProcessingException e) {
             throw e;
         } catch (Exception e) {
-            SourceGenerators.handleFatalException(
-                element,
-                StaticMetamodel.class,
-                e,
-                exception -> {
-                    processed.remove(element.getName());
-                    throw exception;
-                }
-            );
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw new ProcessingException(element, "Failed to generate a @" + "jakarta.persistence.metamodel.StaticMetamodel" + ": " + message, e);
         }
     }
 
     /**
-     * @param visitorContext
+     * @param visitorContext visitor context
      */
     @Override
     public void start(VisitorContext visitorContext) {
-        this.processed = new HashSet<>();
+        this.processed.clear();
     }
 
     /**
-     * @return
+     * @return Visitor kind
      */
     @Override
     public @NonNull VisitorKind getVisitorKind() {
         return VisitorKind.ISOLATING;
     }
 
-    /**
-     * @return
-     */
-    @Override
-    public TypeElementQuery query() {
-        return TypeElementQuery.onlyClass();
-    }
-
-    /**
-     * @return
-     */
-    @Override
-    public boolean isEnabled() {
-        return true;
-    }
 }

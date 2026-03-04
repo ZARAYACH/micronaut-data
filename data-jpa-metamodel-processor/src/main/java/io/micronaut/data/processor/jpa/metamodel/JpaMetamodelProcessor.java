@@ -16,121 +16,139 @@
 package io.micronaut.data.processor.jpa.metamodel;
 
 import io.micronaut.core.naming.NameUtils;
+import io.micronaut.inject.ast.ClassElement;
 import io.micronaut.inject.ast.PropertyElement;
 import io.micronaut.sourcegen.model.*;
-import jakarta.annotation.Generated;
+import org.jspecify.annotations.NonNull;
 
 import javax.lang.model.element.Modifier;
-import javax.persistence.metamodel.*;
-import java.util.List;
+import java.util.*;
 
 /**
  *
  */
 public class JpaMetamodelProcessor {
+
+    public static final Set<String> SUPPORTED_JAKARTA_ANNOTATIONS = new HashSet<>(Arrays.asList("jakarta.persistence.Entity",
+        "jakarta.persistence.MappedSuperclass",
+        "jakarta.persistence.Embeddable"));
+
     /**
      * JPA meta model class def generator .
      *
-     * @param packageName
-     * @param elementType
-     * @param properties
+     * @param packageName          Element package name
+     * @param elementType          Element type
+     * @param optionalSuperElement Element super type
+     * @param properties           element properties/fields
      * @return Jpa metamodel class definition builder .
      */
-    public static ClassDef.ClassDefBuilder createJpaMetaModelClassDefBuilder(String packageName,
-                                                                             ClassTypeDef elementType,
-                                                                             List<PropertyElement> properties) {
-        String localBinaryName = elementType.getName().startsWith(packageName + ".")
-            ? elementType.getName().substring(packageName.isEmpty() ? 0 : packageName.length() + 1)
-            : elementType.getName();
-        String baseName = elementType.isInner() ? localBinaryName.replace("$", "") : elementType.getSimpleName();
-        String metaModelClassSimpleName = baseName + "_";
-        String metaModelClassName = packageName + "." + metaModelClassSimpleName;
-
-//        List<TypeDef.TypeVariable> typeArguments = List.of();
-//        if (elementType instanceof ClassTypeDef.Parameterized parameterizedType) {
-//            typeArguments = parameterizedType.typeArguments()
-//                .stream().filter(td -> td instanceof TypeDef.TypeVariable)
-//                .map(TypeDef.TypeVariable.class::cast)
-//                .toList();
-//        }
-//
-//        ClassTypeDef metaModelClassType;
-//
-//        if (typeArguments.isEmpty()) {
-//            metaModelClassType = ClassTypeDef.of(metaModelClassName);
-//        } else {
-//            metaModelClassType = TypeDef.parameterized(
-//                ClassTypeDef.of(metaModelClassName),
-//                typeArguments.toArray(TypeDef[]::new)
-//            );
-//        }
+    public static ClassDef.ClassDefBuilder createJpaMetaModelClassDefBuilder(@NonNull String packageName, @NonNull ClassTypeDef elementType, Optional<ClassElement> optionalSuperElement, List<PropertyElement> properties) {
+        String metaModelClassName = resolveModelClassName(packageName, elementType);
 
         ClassDef.ClassDefBuilder classDefBuilder = ClassDef.builder(metaModelClassName)
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-            .addAnnotation(AnnotationDef.builder(Generated.class)
-                .addMember("value", JpaMetamodelProcessor.class).build())
-            .addAnnotation(AnnotationDef.builder(StaticMetamodel.class)
-                .addMember("value", elementType.getName() + ".class").build());
+            .addAnnotation(AnnotationDef.builder(ClassTypeDef.of("jakarta.persistence.metamodel.StaticMetamodel")).addMember("value", elementType).build())
+            .addAnnotation(AnnotationDef.builder(ClassTypeDef.of("jakarta.annotation.Generated")).addMember("value", JpaMetamodelProcessor.class.getName()).build());
+
+        ClassElement superElement = optionalSuperElement.orElse(null);
+
+        if (superElement != null && supportedClass(superElement)) {
+            String superElementModelClassName = resolveModelClassName(superElement.getPackageName(), ClassTypeDef.of(superElement));
+            ClassTypeDef superClassModelTypeDef = ClassTypeDef.of(superElementModelClassName);
+            classDefBuilder.superclass(superClassModelTypeDef);
+        }
+
+        properties = properties.stream().filter(o -> !o.getAnnotationNames().contains("jakarta.persistence.Transient"))
+            .filter(o -> o.getDeclaringType().getName().equals(elementType.getName()))
+            .toList();
+
+        List<FieldDef> constantPropertyName = new ArrayList<>();
+        List<FieldDef> attributeFields = new ArrayList<>();
 
         for (PropertyElement beanProperty : properties) {
-            classDefBuilder.addField(createConstantPropertyName(beanProperty));
-            classDefBuilder.addField(createAttributeField(beanProperty));
+            constantPropertyName.add(createConstantPropertyName(beanProperty));
+            attributeFields.add(createAttributeField(beanProperty, elementType));
         }
+
+        classDefBuilder.addFields(constantPropertyName);
+        classDefBuilder.addFields(attributeFields);
         classDefBuilder.addField(createEntityTypeField(elementType));
         classDefBuilder.addMethod(MethodDef.constructor().build());
         return classDefBuilder;
     }
 
     /**
-     * @param elementType
+     *
+     * @param packageName package name
+     * @param elementType element type
+     * @return static metamodel class canonical name_ .
+     */
+    private static String resolveModelClassName(String packageName, ClassTypeDef elementType) {
+        String localBinaryName = elementType.getName().startsWith(packageName + ".") ? elementType.getName().substring(packageName.isEmpty() ? 0 : packageName.length() + 1) : elementType.getName();
+        String baseName = elementType.isInner() ? localBinaryName.replace("$", "") : elementType.getSimpleName();
+        String metaModelClassSimpleName = baseName + "_";
+        return packageName + "." + metaModelClassSimpleName;
+    }
+
+    /**
+     * Utility function to check if the given class is supported for StaticMetamodel generation.
+     *
+     * @param classElement class element
+     * @return boolean
+     */
+    public static boolean supportedClass(ClassElement classElement) {
+        return !classElement.isInner() && classElement.getAnnotationNames().stream().anyMatch(SUPPORTED_JAKARTA_ANNOTATIONS::contains);
+    }
+
+    /**
+     * @param elementType class type definition
      * @return FieldDef
      */
     private static FieldDef createEntityTypeField(ClassTypeDef elementType) {
-        return FieldDef.builder("class_")
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC)
-            .ofType(TypeDef.parameterized(
-                ClassTypeDef.of(EntityType.class),
-                elementType)).build();
+        return FieldDef.builder("class_").addModifiers(Modifier.PUBLIC, Modifier.VOLATILE, Modifier.STATIC)
+            .ofType(TypeDef.parameterized(ClassTypeDef.of("jakarta.persistence.metamodel.EntityType"), elementType)).build();
     }
 
     /**
-     * @param beanProperty
+     * @param beanProperty field
      * @return FieldDef
      */
     private static FieldDef createConstantPropertyName(PropertyElement beanProperty) {
-        return FieldDef.builder(NameUtils.underscoreSeparate(beanProperty.getSimpleName()))
+        return FieldDef.builder(NameUtils.underscoreSeparate(beanProperty.getName()).toUpperCase(Locale.ROOT))
             .ofType(TypeDef.STRING)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC)
-            .initializer(ExpressionDef.constant(beanProperty.getSimpleName()))
-            .build();
+            .initializer(ExpressionDef.constant(beanProperty.getSimpleName())).build();
     }
 
     /**
-     * @param beanProperty
+     * Create attribute fields SingularAttribute,ListAttribute... based on the element type .
+     *
+     * @param beanProperty Field
+     * @param classTypeDef Field type
      * @return FieldDef
      */
-    private static FieldDef createAttributeField(PropertyElement beanProperty) {
-        FieldDef.FieldDefBuilder attributeDefBuilder = FieldDef.builder(beanProperty.getName())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.VOLATILE);
+    private static FieldDef createAttributeField(PropertyElement beanProperty, ClassTypeDef classTypeDef) {
+        FieldDef.FieldDefBuilder attributeDefBuilder = FieldDef.builder(beanProperty.getName()).addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.VOLATILE);
 
         TypeDef typeDef = switch (beanProperty.getType().getName()) {
-            case "java.util.Collection" -> TypeDef.parameterized(
-                ClassTypeDef.of(CollectionAttribute.class),
-                TypeDef.of(beanProperty.getType()), TypeDef.of(beanProperty.getType().getTypeArguments().get("E")));
-            case "java.util.Set" -> TypeDef.parameterized(
-                ClassTypeDef.of(SetAttribute.class),
-                TypeDef.of(beanProperty.getType()), TypeDef.of(beanProperty.getType().getTypeArguments().get("E")));
-            case "java.util.List" -> TypeDef.parameterized(
-                ClassTypeDef.of(ListAttribute.class),
-                TypeDef.of(beanProperty.getType()), TypeDef.of(beanProperty.getType().getTypeArguments().get("E")));
-            case "java.util.Map" -> TypeDef.parameterized(
-                ClassTypeDef.of(MapAttribute.class),
-                TypeDef.of(beanProperty.getType()),
-                TypeDef.of(beanProperty.getType().getTypeArguments().get("K")), TypeDef.of(beanProperty.getType().getTypeArguments().get("V")));
-            default -> TypeDef.parameterized(
-                ClassTypeDef.of(SingularAttribute.class),
-                TypeDef.of(beanProperty.getType()));
+            case "java.util.Collection" ->
+                TypeDef.parameterized(ClassTypeDef.of("jakarta.persistence.metamodel.CollectionAttribute"), classTypeDef, TypeDef.of(beanProperty.getType().getTypeArguments().get("E")));
+            case "java.util.Set" ->
+                TypeDef.parameterized(ClassTypeDef.of("jakarta.persistence.metamodel.SetAttribute"), classTypeDef, TypeDef.of(beanProperty.getType().getTypeArguments().get("E")));
+            case "java.util.List" ->
+                TypeDef.parameterized(ClassTypeDef.of("jakarta.persistence.metamodel.ListAttribute"), classTypeDef, TypeDef.of(beanProperty.getType().getTypeArguments().get("E")));
+            case "java.util.Map" ->
+                TypeDef.parameterized(ClassTypeDef.of("jakarta.persistence.metamodel.MapAttribute"), classTypeDef, TypeDef.of(beanProperty.getType().getTypeArguments().get("K")), TypeDef.of(beanProperty.getType().getTypeArguments().get("V")));
+            default ->
+                TypeDef.parameterized(ClassTypeDef.of("jakarta.persistence.metamodel.SingularAttribute"), classTypeDef, getProperType(TypeDef.of(beanProperty.getType())));
         };
         return attributeDefBuilder.ofType(typeDef).build();
+    }
+
+    private static TypeDef getProperType(TypeDef type) {
+        if (type.isPrimitive() && type instanceof TypeDef.Primitive primitive) {
+            return TypeDef.of(primitive.wrapperType().getName());
+        }
+        return type;
     }
 }
