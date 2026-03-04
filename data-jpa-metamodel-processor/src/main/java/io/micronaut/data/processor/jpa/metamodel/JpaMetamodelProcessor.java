@@ -1,17 +1,17 @@
 /*
  * Copyright 2017-2026 original authors
  *
- *   Licensed under the Apache License, Version 2.0 (the "License");
- *   you may not use this file except in compliance with the License.
- *   You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *   https://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
- *   Unless required by applicable law or agreed to in writing, software
- *   distributed under the License is distributed on an "AS IS" BASIS,
- *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *   See the License for the specific language governing permissions and
- *   limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package io.micronaut.data.processor.jpa.metamodel;
 
@@ -25,13 +25,22 @@ import javax.lang.model.element.Modifier;
 import java.util.*;
 
 /**
- *
+ * Jpa Static Metamodel processor.
  */
-public class JpaMetamodelProcessor {
+public final class JpaMetamodelProcessor {
 
+    /**
+     * Supported Jakarta annotations for generating Static meta model classes.
+     */
     public static final Set<String> SUPPORTED_JAKARTA_ANNOTATIONS = new HashSet<>(Arrays.asList("jakarta.persistence.Entity",
         "jakarta.persistence.MappedSuperclass",
         "jakarta.persistence.Embeddable"));
+
+    /**
+     * Default constructor.
+     */
+    public JpaMetamodelProcessor() {
+    }
 
     /**
      * JPA meta model class def generator .
@@ -145,6 +154,11 @@ public class JpaMetamodelProcessor {
         return attributeDefBuilder.ofType(typeDef).build();
     }
 
+    /**
+     *
+     * @param type
+     * @return
+     */
     private static TypeDef getProperType(TypeDef type) {
         if (type.isPrimitive() && type instanceof TypeDef.Primitive primitive) {
             return TypeDef.of(primitive.wrapperType().getName());
