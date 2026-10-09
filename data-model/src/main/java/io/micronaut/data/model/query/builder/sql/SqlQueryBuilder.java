@@ -1117,9 +1117,9 @@ public class SqlQueryBuilder extends AbstractSqlLikeQueryBuilder {
                     String definition = optSqlColumnMapping.get().getDefinition();
                     if (definition != null && definition.toLowerCase().contains("geometry")) {
                         Integer srid = indexMapping.srid();
-                        if (Objects.equals(SqlSchemaUtils.SRID_WGS_84, srid) || Objects.equals(SqlSchemaUtils.SRID_ETRS_89, srid)) {
+                        if (Objects.equals(Srid.WGS_84, srid) || Objects.equals(Srid.ETRS_89, srid)) {
                             indexBuilder.append(" USING GEOMETRY_GRID WITH (BOUNDING_BOX = (-180, -90, 180,  90))");
-                        } else if (Objects.equals(SqlSchemaUtils.SRID_WEB_MERCATOR, srid)) {
+                        } else if (Objects.equals(Srid.WEB_MERCATOR, srid)) {
                             indexBuilder.append(" USING GEOMETRY_GRID WITH (BOUNDING_BOX = (-20037508.3427892, -20037508.3427892, 20037508.3427892,  20037508.3427892))");
                         }
                     }
@@ -1791,7 +1791,7 @@ public class SqlQueryBuilder extends AbstractSqlLikeQueryBuilder {
         if (optSrid.isPresent()) {
             sb.append(", ");
             if (isWkt) {
-                sb.append(optSrid.getAsInt());
+                sb.append(optSrid.getAsInt()).append(SqlQueryBuilderUtils.MYSQL_WKT_AXIS_ORDER);
             } else {
                 sb.append("1, ").append(optSrid.getAsInt());
             }
@@ -1815,10 +1815,10 @@ public class SqlQueryBuilder extends AbstractSqlLikeQueryBuilder {
         int defaultSrid;
         if (SqlQueryBuilderUtils.isGeography(annotationMetadata)) {
             geoDataType = "geography";
-            defaultSrid = 4326;
+            defaultSrid = Srid.WGS_84;
         } else {
             geoDataType = "geometry";
-            defaultSrid = 3857;
+            defaultSrid = Srid.WEB_MERCATOR;
         }
 
         sb.append(geoDataType).append("::STGeomFromText(");
@@ -2466,19 +2466,23 @@ public class SqlQueryBuilder extends AbstractSqlLikeQueryBuilder {
                     } else {
                         columnName = asPath(propertyAssociations, prop);
                     }
-                    if (transformed != null) {
-                        query.append(transformed).append(AS_CLAUSE);
-                    } else {
-                        query
-                            .append(joinAlias)
-                            .append(DOT)
-                            .append(queryState.shouldEscape() ? quote(columnName) : columnName)
-                            .append(AS_CLAUSE);
+
+                    if (StringUtils.isEmpty(columnAlias)) {
+                        columnAlias = joinPathAlias + columnName;
                     }
-                    if (StringUtils.isNotEmpty(columnAlias)) {
-                        query.append(columnAlias);
+
+                    String qualifiedColumn = joinAlias + DOT + (queryState.shouldEscape() ? quote(columnName) : columnName);
+
+                    if (transformed != null) {
+                        query.append(transformed).append(AS_CLAUSE).append(columnAlias);
                     } else {
-                        query.append(joinPathAlias).append(columnName);
+                        if (isJsonOrWktGeometry(prop)) {
+                            query.append(getGeometryFunction(qualifiedColumn, columnAlias, prop));
+                        } else {
+                            query.append(qualifiedColumn)
+                                    .append(AS_CLAUSE)
+                                    .append(columnAlias);
+                        }
                     }
                     query.append(COMMA);
                 });

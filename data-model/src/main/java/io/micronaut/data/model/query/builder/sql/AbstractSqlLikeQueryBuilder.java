@@ -3729,8 +3729,17 @@ public abstract class AbstractSqlLikeQueryBuilder implements QueryBuilder {
             sb.append(COMMA);
         }
 
+        /**
+         * Wraps a geometry column in the dialect-specific function that reads it as GeoJSON or WKT,
+         * depending on the property converter.
+         *
+         * @param column      The column, qualified with the table alias
+         * @param columnAlias The result column alias
+         * @param property    The geometry property
+         * @return The select expression including the alias
+         */
         @SuppressWarnings("NullAway")
-        private String getGeometryFunction(String column, String columnAlias, PersistentProperty property) {
+        protected String getGeometryFunction(String column, String columnAlias, PersistentProperty property) {
             AnnotationMetadata annotationMetadata = property.getAnnotationMetadata();
             String converter = annotationMetadata.stringValue(MappedProperty.class, "converter").orElse(null);
             boolean isWkt = GeometryWktConverter.class.getName().equals(converter);
@@ -3766,7 +3775,8 @@ public abstract class AbstractSqlLikeQueryBuilder implements QueryBuilder {
 
         private String getOtherGeometryFunction(String column, String columnAlias, boolean isWkt) {
             String function = isWkt ? "ST_AsText(" : "ST_AsGeoJSON(";
-            return function + column + ")" + AS_CLAUSE + columnAlias;
+            String options = isWkt && getDialect() == Dialect.MYSQL ? SqlQueryBuilderUtils.MYSQL_WKT_AXIS_ORDER : "";
+            return function + column + options + ")" + AS_CLAUSE + columnAlias;
         }
 
         private void appendFunction(String functionName, Expression<?> expression) {
